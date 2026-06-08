@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>我的定位轨迹</title>
+    <style>
+        * { margin:0; padding:0; }
+        #container { width:100%; height:100vh; }
+        .info-panel {
+            position: fixed; bottom: 20px; left: 20px;
+            background: rgba(0,0,0,0.7); color: white;
+            padding: 8px 15px; border-radius: 20px;
+            font-size: 14px; z-index: 1000; font-family: sans-serif;
+        }
+        .refresh-btn {
+            position: fixed; top: 20px; right: 20px;
+            background: #2196F3; color: white; border: none;
+            padding: 10px 20px; border-radius: 30px;
+            z-index: 1000; cursor: pointer; font-size: 16px;
+        }
+        .loading {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%,-50%);
+            background: black; color: white;
+            padding: 10px 20px; border-radius: 10px;
+            z-index: 2000;
+        }
+    </style>
+</head>
+<body>
+<div id="container"></div>
+<div class="info-panel" id="infoPanel">📍 加载中...</div>
+<button class="refresh-btn" onclick="loadData()">🔄 刷新</button>
+<div id="loading" class="loading" style="display:none;">加载中...</div>
+
+<script src="https://webapi.amap.com/maps?v=2.0&key=ba2ef83d8e7844d9ae9b979e88b8c432"></script>
+<script>
+    // ★★★ 非常重要：请替换成你的 GitHub 用户名 ★★★
+    const YOUR_GITHUB_USERNAME = 'LeeYunLong117';
+    const REPO_NAME = 'location';
+
+    let map = null;
+    let currentPolyline = null;
+    let currentMarkers = [];
+
+    function initMap() {
+        map = new AMap.Map('container', {
+            zoom: 14,
+            center: [116.397428, 39.90923],
+            viewMode: '2D'
+        });
+        loadData();
+    }
+
+    async function loadData() {
+        const loadingDiv = document.getElementById('loading');
+        loadingDiv.style.display = 'block';
+        try {
+            const rawUrl = `https://raw.githubusercontent.com/${YOUR_GITHUB_USERNAME}/${REPO_NAME}/main/data.txt?t=${new Date().getTime()}`;
+            const response = await fetch(rawUrl);
+            if (!response.ok) throw new Error('data.txt 不存在');
+            const text = await response.text();
+            let points = JSON.parse(text);
+            if (!Array.isArray(points)) points = [];
+            updateMap(points);
+            document.getElementById('infoPanel').innerHTML = `📍 轨迹点数: ${points.length} | ${new Date().toLocaleString()}`;
+        } catch(e) {
+            console.error(e);
+            document.getElementById('infoPanel').innerHTML = '⚠️ 无法加载 data.txt，请确保文件存在且格式正确';
+        } finally {
+            loadingDiv.style.display = 'none';
+        }
+    }
+
+    function updateMap(points) {
+        if (!map) return;
+        if (currentPolyline) map.remove(currentPolyline);
+        currentMarkers.forEach(m => map.remove(m));
+        currentMarkers = [];
+        if (points.length === 0) return;
+
+        const valid = points.filter(p => p.latitude && p.longitude && p.timestamp);
+        if (valid.length === 0) return;
+        valid.sort((a,b) => a.timestamp - b.timestamp);
+
+        const path = valid.map(p => [p.longitude, p.latitude]);
+        currentPolyline = new AMap.Polyline({
+            path: path, strokeColor: "#FF5733", strokeWeight: 4, strokeOpacity: 0.8
+        });
+        map.add(currentPolyline);
+
+        valid.forEach((p, idx) => {
+            const isEnd = idx === valid.length-1;
+            const marker = new AMap.Marker({
+                position: [p.longitude, p.latitude],
+                title: new Date(p.timestamp).toLocaleString(),
+                icon: new AMap.Icon({
+                    size: new AMap.Size(24, 32),
+                    image: `https://webapi.amap.com/theme/v1.3/markers/n/${isEnd ? 'b' : 'a'}.png`,
+                    imageSize: new AMap.Size(24, 32)
+                })
+            });
+            marker.on('click', () => {
+                new AMap.InfoWindow({
+                    content: `<div><strong>时间:</strong> ${new Date(p.timestamp).toLocaleString()}<br>
+                    <strong>坐标:</strong> ${p.latitude.toFixed(6)}, ${p.longitude.toFixed(6)}</div>`,
+                    offset: new AMap.Pixel(0, -30)
+                }).open(map, [p.longitude, p.latitude]);
+            });
+            map.add(marker);
+            currentMarkers.push(marker);
+        });
+        map.setFitView([currentPolyline, ...currentMarkers]);
+    }
+
+    window.onload = initMap;
+    setInterval(loadData, 30000);
+</script>
+</body>
+</html>
